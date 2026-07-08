@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# 自动加载项目根目录的 .env 文件
+_load_dotenv = load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 @dataclass
