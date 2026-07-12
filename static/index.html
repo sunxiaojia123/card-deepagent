@@ -91,6 +91,46 @@
     color: #484f58; font-size: 15px;
   }
 
+  .skills-section { border-top: 1px solid #21262d; max-height: 40%; display: flex; flex-direction: column; }
+  .skills-header {
+    padding: 10px 16px; display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; font-size: 13px; font-weight: 600; color: #8b949e; flex-shrink: 0;
+  }
+  .skills-header:hover { color: #e1e4e8; }
+  .skills-header .arrow { font-size: 10px; transition: transform .2s; margin-right: 6px; }
+  .skills-header .arrow.open { transform: rotate(90deg); }
+  .skills-list { overflow-y: auto; padding: 0 8px 8px; display: none; }
+  .skills-list.open { display: block; }
+  .skill-item {
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    margin-bottom: 2px; color: #58a6ff; display: flex; justify-content: space-between; align-items: center;
+  }
+  .skill-item:hover { background: #1c2128; }
+  .skill-item.base { color: #484f58; cursor: default; font-style: italic; }
+  .skill-item .del { color: #f85149; padding: 2px 6px; font-size: 11px; display: none; }
+  .skill-item:hover .del { display: inline; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200;
+    display: none; align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 24px; width: 480px; max-width: 90vw; max-height: 80vh; overflow-y: auto;
+  }
+  .modal h2 { font-size: 16px; margin-bottom: 16px; }
+  .modal label { font-size: 12px; color: #8b949e; display: block; margin-bottom: 4px; }
+  .modal input, .modal textarea {
+    width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    color: #e1e4e8; padding: 8px 12px; font-size: 13px; font-family: inherit; margin-bottom: 12px;
+  }
+  .modal textarea { min-height: 200px; resize: vertical; }
+  .modal input:focus, .modal textarea:focus { outline: none; border-color: #58a6ff; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-danger { background: #da3633; border-color: #f85149; color: #fff; }
+  .btn-danger:hover { background: #f85149; }
+
   .toast {
     position: fixed; bottom: 20px; right: 20px; background: #238636; color: #fff;
     padding: 10px 20px; border-radius: 8px; font-size: 13px; z-index: 100;
@@ -116,6 +156,30 @@
     <button class="btn btn-primary" onclick="newConversation()">+ 新会话</button>
   </div>
   <div class="conv-list" id="convList"></div>
+
+  <div class="skills-section">
+    <div class="skills-header" onclick="toggleSkills()">
+      <span><span class="arrow" id="skillsArrow">▸</span> Skills</span>
+      <button class="btn btn-primary" style="padding:2px 8px;font-size:11px;width:auto" onclick="event.stopPropagation();openCreateModal()">+</button>
+    </div>
+    <div class="skills-list" id="skillsList"></div>
+  </div>
+</div>
+
+<!-- Skill Modal -->
+<div class="modal-overlay" id="skillModal">
+  <div class="modal">
+    <h2 id="skillModalTitle">新建 Skill</h2>
+    <label>名称（英文）</label>
+    <input id="skillName" placeholder="my-strategy" />
+    <label>内容（Markdown）</label>
+    <textarea id="skillContent" placeholder="# 策略说明&#10;&#10;描述你的策略..."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="skillDeleteBtn" style="display:none;margin-right:auto" onclick="deleteSkill()">删除</button>
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveSkill()">保存</button>
+    </div>
+  </div>
 </div>
 
 <div class="main">
@@ -186,6 +250,7 @@ function switchUser(newUserId) {
   document.getElementById('userBadge').textContent = userId;
   document.getElementById('messages').innerHTML = '';
   loadConversations();
+  loadSkills();
   toast('已切换到 ' + userId);
 }
 
@@ -349,6 +414,92 @@ function toast(msg, isError) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2500);
+}
+
+// ── Skills ──
+const BASE_SKILLS = ['order-guide', 'market-info'];
+let editSkillName = null;
+
+function toggleSkills() {
+  const list = document.getElementById('skillsList');
+  const arrow = document.getElementById('skillsArrow');
+  const open = list.classList.toggle('open');
+  arrow.classList.toggle('open', open);
+  if (open) loadSkills();
+}
+
+async function loadSkills() {
+  try {
+    const data = await api('GET', '/users/me/skills').then(r => r.json());
+    const list = document.getElementById('skillsList');
+    const allNames = [...new Set([...BASE_SKILLS, ...data.skills])];
+    list.innerHTML = allNames.map(name => {
+      const isBase = BASE_SKILLS.includes(name);
+      return `<div class="skill-item ${isBase ? 'base' : ''}" ${isBase ? '' : `onclick="openEditModal('${name}')"`}>
+        <span>${isBase ? '📋 ' : '📝 '}${name}</span>
+        ${isBase ? '' : '<span class="del" onclick="event.stopPropagation();deleteSkill(\'' + name + '\')">✕</span>'}
+      </div>`;
+    }).join('');
+  } catch (e) { console.error('load skills:', e); }
+}
+
+function openCreateModal() {
+  editSkillName = null;
+  document.getElementById('skillModalTitle').textContent = '新建 Skill';
+  document.getElementById('skillName').value = '';
+  document.getElementById('skillName').disabled = false;
+  document.getElementById('skillContent').value = '';
+  document.getElementById('skillDeleteBtn').style.display = 'none';
+  document.getElementById('skillModal').classList.add('open');
+}
+
+async function openEditModal(name) {
+  try {
+    const resp = await api('GET', '/users/me/skills/' + encodeURIComponent(name));
+    const content = await resp.text();
+    editSkillName = name;
+    document.getElementById('skillModalTitle').textContent = '编辑 Skill';
+    document.getElementById('skillName').value = name;
+    document.getElementById('skillName').disabled = true;
+    document.getElementById('skillContent').value = content;
+    document.getElementById('skillDeleteBtn').style.display = 'inline-block';
+    document.getElementById('skillModal').classList.add('open');
+  } catch (e) { toast('加载失败: ' + e.message, true); }
+}
+
+function closeModal() {
+  document.getElementById('skillModal').classList.remove('open');
+}
+
+async function saveSkill() {
+  const name = document.getElementById('skillName').value.trim();
+  const content = document.getElementById('skillContent').value;
+  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name)) { toast('名称仅支持英文数字和 -_', true); return; }
+  if (!content) { toast('内容不能为空', true); return; }
+
+  try {
+    if (editSkillName) {
+      await api('PUT', '/users/me/skills/' + encodeURIComponent(editSkillName), { content });
+      toast('已更新 ' + editSkillName);
+    } else {
+      await api('POST', '/users/me/skills', { name, content });
+      toast('已创建 ' + name);
+    }
+    closeModal();
+    loadSkills();
+  } catch (e) { toast('保存失败: ' + e.message, true); }
+}
+
+async function deleteSkill(name) {
+  if (!name) name = editSkillName;
+  if (!name) return;
+  if (!confirm('删除 Skill "' + name + '"？此操作不可撤销。')) return;
+  try {
+    await api('DELETE', '/users/me/skills/' + encodeURIComponent(name));
+    toast('已删除 ' + name);
+    closeModal();
+    loadSkills();
+  } catch (e) { toast('删除失败: ' + e.message, true); }
 }
 
 // ── Init ──

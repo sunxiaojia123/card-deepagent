@@ -1,0 +1,20 @@
+{
+  "skill-user-a": {
+    "golden-cross-strategy": "# 金叉策略\n当 MA5 上穿 MA20 时买入，下穿时卖出。"
+  },
+  "skill-user-ax": {
+    "a-secret-skill": "# Secret\nOnly for A."
+  },
+  "user-a": {
+    "my-strategy": "# Strategy\nBuy low!"
+  },
+  "user-updater": {
+    "test-skill": "v2-updated"
+  },
+  "alice": {
+    "alice-skill": "Alice's skill"
+  },
+  "user-alice": {
+    "lightning-trade": "# 闪电交易策略\n\n## 流程\n1. 获取行情\n2. 给出建议\n3. 引导下单"
+  }
+}

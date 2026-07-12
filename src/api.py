@@ -16,7 +16,10 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from config.settings import settings
 from src.agent import build_agent
 from src.context import build_context
+from fastapi.responses import PlainTextResponse
+
 from src.backend import (
+    _restore_from_disk,
     create_user_skill,
     delete_user_skill,
     get_user_skill,
@@ -43,6 +46,7 @@ async def _lifespan(_app: FastAPI):
         await saver.setup()
         agent = build_agent(checkpointer=saver, with_skills=True)
         await init_db()
+        await _restore_from_disk()
         _app.state.agent = agent
         _app.state.saver = saver
         yield
@@ -189,6 +193,18 @@ def _msg_role(msg) -> str:
 
 
 # ── User Skill CRUD ──
+
+
+@app.get("/users/me/skills/{skill_name}")
+async def get_skill(
+    skill_name: str,
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> PlainTextResponse:
+    """获取 Skill 文件内容."""
+    content = await get_user_skill(user_id, skill_name)
+    if content is None:
+        raise HTTPException(status_code=404, detail="skill 不存在")
+    return PlainTextResponse(content, media_type="text/plain")
 
 
 @app.get("/users/me/skills")
