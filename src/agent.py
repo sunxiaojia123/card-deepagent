@@ -7,6 +7,7 @@ from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from config.settings import settings
+from src.backend import create_user_scoped_backend
 from src.context import TradingContext
 
 TRADING_ORCHESTRATOR_PROMPT = """\
@@ -35,20 +36,28 @@ def build_agent(
     model: str | BaseChatModel | None = None,
     system_prompt: str | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
-) -> BaseChatModel:  # 实际返回 CompiledStateGraph，但 typing stub 不支持
+    with_skills: bool = False,
+) -> BaseChatModel:
     """构建交易助手 Deep Agent。
 
     Args:
         model: 模型标识或实例，默认取 settings.model。
         system_prompt: 自定义 system prompt，默认取 TRADING_ORCHESTRATOR_PROMPT。
         checkpointer: 持久化 checkpointer，用于多轮对话。不传则无持久化。
+        with_skills: 是否启用 User Skill 隔离（Phase 2 功能）。
 
     Returns:
         编译后的 agent（CompiledStateGraph）。
     """
+    kwargs = {}
+    if with_skills:
+        kwargs["skills"] = ["/skills/base/", "/skills/user/"]
+        kwargs["backend"] = create_user_scoped_backend
+
     return create_deep_agent(
         model=model or settings.model,
         system_prompt=system_prompt or TRADING_ORCHESTRATOR_PROMPT,
         context_schema=TradingContext,
         checkpointer=checkpointer,
+        **kwargs,
     )

@@ -16,6 +16,13 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from config.settings import settings
 from src.agent import build_agent
 from src.context import build_context
+from src.backend import (
+    create_user_skill,
+    delete_user_skill,
+    get_user_skill,
+    list_user_skills,
+    update_user_skill,
+)
 from src.db import conversation_exists, create_conversation, init_db, list_conversations
 from src.stream import sse_adapter
 
@@ -34,7 +41,7 @@ async def _lifespan(_app: FastAPI):
     """管理 checkpointer + agent 生命周期."""
     async with AsyncPostgresSaver.from_conn_string(settings.postgres_uri) as saver:
         await saver.setup()
-        agent = build_agent(checkpointer=saver)
+        agent = build_agent(checkpointer=saver, with_skills=True)
         await init_db()
         _app.state.agent = agent
         _app.state.saver = saver
@@ -179,6 +186,62 @@ def _msg_role(msg) -> str:
     if "Tool" in type_name:
         return "tool"
     return type_name
+
+
+# ── User Skill CRUD ──
+
+
+@app.get("/users/me/skills")
+async def list_skills(
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """列出当前用户的 Skill 文件."""
+    names = await list_user_skills(user_id)
+    return {"skills": names}
+
+
+@app.post("/users/me/skills")
+async def create_skill(
+    body: dict[str, str],
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """创建 Skill 文件."""
+    name = body.get("name", "").strip()
+    content = body.get("content", "")
+    if not name:
+        raise HTTPException(status_code=400, detail="name 不能为空")
+    if not content:
+        raise HTTPException(status_code=400, detail="content 不能为空")
+    await create_user_skill(user_id, name, content)
+    return {"name": name, "status": "created"}
+
+
+@app.put("/users/me/skills/{skill_name}")
+async def update_skill(
+    skill_name: str,
+    body: dict[str, str],
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """更新 Skill 文件."""
+    content = body.get("content", "")
+    if not content:
+        raise HTTPException(status_code=400, detail="content 不能为空")
+    ok = await update_user_skill(user_id, skill_name, content)
+    if not ok:
+        raise HTTPException(status_code=404, detail="skill 不存在")
+    return {"name": skill_name, "status": "updated"}
+
+
+@app.delete("/users/me/skills/{skill_name}")
+async def delete_skill(
+    skill_name: str,
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """删除 Skill 文件."""
+    ok = await delete_user_skill(user_id, skill_name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="skill 不存在")
+    return {"name": skill_name, "status": "deleted"}
 
 
 @app.get("/health")
