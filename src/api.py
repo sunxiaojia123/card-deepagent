@@ -7,14 +7,16 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from config.settings import settings
 from src.agent import build_agent
 from src.context import build_context
-from src.db import create_conversation, init_db, list_conversations
+from src.db import conversation_exists, create_conversation, init_db, list_conversations
 from src.stream import sse_adapter
 
 
@@ -45,6 +47,19 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/")
+async def index():
+    return FileResponse("static/index.html")
+
 
 @app.post("/conversations/{conversation_id}/chat/stream")
 async def chat_stream(
@@ -61,6 +76,9 @@ async def chat_stream(
     message = body.get("message", "").strip()
     if not message:
         raise HTTPException(status_code=400, detail="message 不能为空")
+
+    if not await conversation_exists(conversation_id, user_id):
+        raise HTTPException(status_code=404, detail="会话不存在或无权访问")
 
     agent = app.state.agent
     ctx = build_context(user_id, conversation_id)
@@ -126,6 +144,9 @@ async def get_conversation_history(
     user_id: Annotated[str, Depends(_extract_user_id)],
 ) -> dict:
     """获取会话历史消息（从 agent state 读取）."""
+    if not await conversation_exists(conversation_id, user_id):
+        raise HTTPException(status_code=404, detail="会话不存在或无权访问")
+
     agent = app.state.agent
     config = {
         "configurable": {

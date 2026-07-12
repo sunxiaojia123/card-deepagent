@@ -79,9 +79,12 @@ async def test_chat_stream_missing_body_message(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_chat_stream_sse_response(client: AsyncClient):
     """SSE 流式返回 text + done 事件."""
+    r = await client.post("/conversations", headers={"Authorization": "Bearer user-api-test"})
+    conv_id = r.json()["conversation_id"]
+
     async with client.stream(
         "POST",
-        "/conversations/conv-api-test/chat/stream",
+        f"/conversations/{conv_id}/chat/stream",
         json={"message": "用一句话介绍比特币。"},
         headers={"Authorization": "Bearer user-api-test"},
     ) as resp:
@@ -103,10 +106,14 @@ async def test_chat_stream_sse_response(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_chat_stream_text_content(client: AsyncClient):
     """SSE 流式 text 事件的 content 拼接成完整回复."""
+    r = await client.post("/conversations", headers={"Authorization": "Bearer user-api-text"})
+    conv_id = r.json()["conversation_id"]
+
     async with client.stream(
         "POST",
-        "/conversations/conv-api-text/chat/stream",
+        f"/conversations/{conv_id}/chat/stream",
         json={"message": "回复一个：好。"},
+        headers={"Authorization": "Bearer user-api-text"},
     ) as resp:
         assert resp.status_code == 200
         raw = await resp.aread()
@@ -227,3 +234,57 @@ async def test_history_roles(client: AsyncClient):
     roles = [m["role"] for m in data["messages"]]
     assert "user" in roles
     assert "assistant" in roles
+
+
+@pytest.mark.asyncio
+async def test_user_isolation_list_conversations(client: AsyncClient):
+    """用户 A 看不到用户 B 的会话."""
+    # A 创建会话
+    r_a = await client.post("/conversations", headers={"Authorization": "Bearer user-a"})
+    conv_a = r_a.json()["conversation_id"]
+
+    # B 查看自己的列表，不应看到 A 的
+    r_b = await client.get("/conversations", headers={"Authorization": "Bearer user-b"})
+    b_ids = [c["conversation_id"] for c in r_b.json()["conversations"]]
+    assert conv_a not in b_ids
+
+
+@pytest.mark.asyncio
+async def test_user_cannot_access_others_history(client: AsyncClient):
+    """用户 A 无法访问用户 B 的会话历史."""
+    # A 创建会话
+    r_a = await client.post("/conversations", headers={"Authorization": "Bearer user-a-hist"})
+    conv_a = r_a.json()["conversation_id"]
+
+    # B 尝试访问 A 的会话历史 → 404
+    resp = await client.get(
+        f"/conversations/{conv_a}/history",
+        headers={"Authorization": "Bearer user-b-hist"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_user_cannot_chat_in_others_conversation(client: AsyncClient):
+    """用户 A 无法在用户 B 的会话中发消息."""
+    # A 创建会话
+    r_a = await client.post("/conversations", headers={"Authorization": "Bearer user-a-chat"})
+    conv_a = r_a.json()["conversation_id"]
+
+    # B 尝试在 A 的会话中发消息 → 404
+    resp = await client.post(
+        f"/conversations/{conv_a}/chat/stream",
+        json={"message": "hello"},
+        headers={"Authorization": "Bearer user-b-chat"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_nonexistent_conversation_returns_404(client: AsyncClient):
+    """不存在的会话返回 404."""
+    resp = await client.get(
+        "/conversations/deadbeef1234/history",
+        headers={"Authorization": "Bearer someone"},
+    )
+    assert resp.status_code == 404
