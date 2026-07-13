@@ -96,3 +96,58 @@ def test_skill_files_exist():
     base = os.path.join(os.path.dirname(__file__), "..", "skills", "base")
     assert os.path.isfile(os.path.join(base, "order-guide", "SKILL.md"))
     assert os.path.isfile(os.path.join(base, "market-info", "SKILL.md"))
+    assert os.path.isfile(os.path.join(base, "gift-card", "SKILL.md"))
+
+
+def test_apis_yaml_exist():
+    """验证 apis.yaml 文件存在."""
+    import os
+    base = os.path.join(os.path.dirname(__file__), "..", "skills", "base")
+    assert os.path.isfile(os.path.join(base, "order-guide", "apis.yaml"))
+    assert os.path.isfile(os.path.join(base, "market-info", "apis.yaml"))
+    assert os.path.isfile(os.path.join(base, "gift-card", "apis.yaml"))
+
+
+def test_load_gift_card_schemas():
+    """加载礼品卡 Skill 的 API schema."""
+    import os
+    from src.tools.api_schema import load_api_schemas
+
+    skill_dir = os.path.join(os.path.dirname(__file__), "..", "skills", "base", "gift-card")
+    schemas = load_api_schemas(skill_dir)
+    assert len(schemas) == 4
+    names = {s.name for s in schemas}
+    assert "query_gift_card" in names
+    assert "create_gift_card" in names
+    assert "top_up_gift_card" in names
+    assert "transfer_gift_card" in names
+
+    # 验证 query_gift_card 的 schema
+    q = next(s for s in schemas if s.name == "query_gift_card")
+    assert q.show_type == "card"
+    assert q.method == "POST"
+    assert len(q.params) == 1
+    assert q.params[0].name == "card_no"
+    assert q.params[0].required is True
+
+
+def test_load_order_guide_schemas():
+    """加载订单 Skill 的 API schema."""
+    import os
+    from src.tools.api_schema import load_api_schemas
+
+    skill_dir = os.path.join(os.path.dirname(__file__), "..", "skills", "base", "order-guide")
+    schemas = load_api_schemas(skill_dir)
+    assert len(schemas) == 3
+
+
+def test_load_market_schemas():
+    """加载行情 Skill 的 API schema，包含 text 类型."""
+    import os
+    from src.tools.api_schema import load_api_schemas
+
+    skill_dir = os.path.join(os.path.dirname(__file__), "..", "skills", "base", "market-info")
+    schemas = load_api_schemas(skill_dir)
+    assert len(schemas) == 2
+    info = next(s for s in schemas if s.name == "query_market_info")
+    assert info.show_type == "text"

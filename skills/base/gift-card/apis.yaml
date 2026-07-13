@@ -1,0 +1,61 @@
+apis:
+  - name: query_gift_card
+    description: 查询礼品卡余额
+    path: /api/v1/gift-card/query
+    method: POST
+    show_type: card
+    params:
+      - name: card_no
+        type: string
+        required: true
+        description: 卡号（GIFT- 开头 + 8 位数字）
+
+  - name: create_gift_card
+    description: 创建/购买礼品卡
+    path: /api/v1/gift-card/create
+    method: POST
+    show_type: card
+    params:
+      - name: amount
+        type: number
+        required: true
+        description: 金额
+      - name: currency
+        type: string
+        required: false
+        default: USD
+        description: 币种
+
+  - name: top_up_gift_card
+    description: 礼品卡充值
+    path: /api/v1/gift-card/top-up
+    method: POST
+    show_type: card
+    params:
+      - name: card_no
+        type: string
+        required: true
+        description: 卡号
+      - name: amount
+        type: number
+        required: true
+        description: 充值金额
+
+  - name: transfer_gift_card
+    description: 礼品卡转账
+    path: /api/v1/gift-card/transfer
+    method: POST
+    show_type: card
+    params:
+      - name: from_card_no
+        type: string
+        required: true
+        description: 转出卡号
+      - name: to_card_no
+        type: string
+        required: true
+        description: 转入卡号
+      - name: amount
+        type: number
+        required: true
+        description: 转账金额

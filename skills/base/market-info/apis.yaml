@@ -1,0 +1,22 @@
+apis:
+  - name: query_market_price
+    description: 查询实时行情
+    path: /api/v1/market/price
+    method: GET
+    show_type: card
+    params:
+      - name: symbol
+        type: string
+        required: true
+        description: 币种（如 BTC、ETH）
+
+  - name: query_market_info
+    description: 查询币种基本信息
+    path: /api/v1/market/info
+    method: GET
+    show_type: text
+    params:
+      - name: symbol
+        type: string
+        required: true
+        description: 币种

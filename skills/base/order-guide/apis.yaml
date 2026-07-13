@@ -1,0 +1,42 @@
+apis:
+  - name: query_positions
+    description: 查询用户当前持仓
+    path: /api/v1/positions
+    method: GET
+    show_type: card
+    params: []
+
+  - name: query_orders
+    description: 查询用户历史订单
+    path: /api/v1/orders
+    method: GET
+    show_type: card
+    params:
+      - name: status
+        type: string
+        required: false
+        default: all
+        description: 订单状态（all/filled/pending）
+
+  - name: place_spot_order
+    description: 现货下单
+    path: /api/v1/orders
+    method: POST
+    show_type: card
+    params:
+      - name: symbol
+        type: string
+        required: true
+        description: 交易对（如 BTC、ETH）
+      - name: side
+        type: string
+        required: true
+        description: buy 或 sell
+      - name: quantity
+        type: number
+        required: true
+        description: 数量
+      - name: price
+        type: number
+        required: false
+        description: 限价（不传表示市价单）
