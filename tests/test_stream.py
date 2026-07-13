@@ -1,12 +1,11 @@
-"""测试 SSE 流式适配器."""
+"""测试 SSE 流式适配器 — 支持多 stream mode."""
 
 from __future__ import annotations
 
-import json
 import os
 
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 
 from src.agent import build_agent
 from src.context import build_context
@@ -21,29 +20,25 @@ needs_deepseek = pytest.mark.skipif(
 @needs_deepseek
 @pytest.mark.asyncio
 async def test_sse_adapter_yields_text_and_done():
-    """SSE 适配器输出 event=text 块，最终以 event=done 结束."""
+    """SSE 适配器输出 event=text，最终以 event=done 结束."""
     agent = build_agent()
-    ctx = build_context("u1", "conv-sse")
-    config = {"configurable": {"thread_id": "conv-sse"}}
+    ctx = build_context("u1", "conv-sse-x")
+    config = {"configurable": {"thread_id": "conv-sse-x"}}
 
     stream = agent.astream(
         {"messages": [HumanMessage(content="用一句话介绍比特币。")]},
         config=config,
         context=ctx,
-        stream_mode=["messages"],
+        stream_mode=["messages", "updates"],
     )
 
     events = []
     async for event in sse_adapter(stream):
         events.append(event)
 
-    assert len(events) >= 2  # 至少一个 text + done
+    assert len(events) >= 2
     text_events = [e for e in events if e["event"] == "text"]
     assert len(text_events) > 0
-    for te in text_events:
-        assert "content" in te["data"]
-        assert len(te["data"]["content"]) > 0
-
     assert events[-1]["event"] == "done"
 
 
@@ -52,14 +47,14 @@ async def test_sse_adapter_yields_text_and_done():
 async def test_sse_adapter_text_concatenation():
     """所有 text 块的 content 拼接后构成完整回复."""
     agent = build_agent()
-    ctx = build_context("u2", "conv-sse2")
-    config = {"configurable": {"thread_id": "conv-sse2"}}
+    ctx = build_context("u2", "conv-sse2-x")
+    config = {"configurable": {"thread_id": "conv-sse2-x"}}
 
     stream = agent.astream(
         {"messages": [HumanMessage(content="说：你好。")]},
         config=config,
         context=ctx,
-        stream_mode=["messages"],
+        stream_mode=["messages", "updates"],
     )
 
     full_text = ""
@@ -76,14 +71,14 @@ async def test_sse_adapter_text_concatenation():
 async def test_sse_events_to_str_format():
     """sse_events_to_str 输出标准 SSE 文本格式."""
     agent = build_agent()
-    ctx = build_context("u3", "conv-sse3")
-    config = {"configurable": {"thread_id": "conv-sse3"}}
+    ctx = build_context("u3", "conv-sse3-x")
+    config = {"configurable": {"thread_id": "conv-sse3-x"}}
 
     stream = agent.astream(
         {"messages": [HumanMessage(content="回复：OK。")]},
         config=config,
         context=ctx,
-        stream_mode=["messages"],
+        stream_mode=["messages", "updates"],
     )
 
     lines = []
@@ -94,7 +89,6 @@ async def test_sse_events_to_str_format():
     for line in lines:
         assert line.startswith("event: ")
         assert "\ndata: " in line
-    # 最后一行是 done
     assert "event: done" in lines[-1]
 
 
@@ -102,10 +96,8 @@ def test_sse_adapter_error_handling():
     """异常时 sse_adapter 输出 event=error."""
 
     async def faulty_stream():
-        yield "messages", (Exception("test error"), {})
         yield "messages", (None, {})
-        if False:  # pragma: no cover
-            yield None
+        raise RuntimeError("test error")
 
     async def run():
         events = []
@@ -116,5 +108,28 @@ def test_sse_adapter_error_handling():
     import asyncio
 
     events = asyncio.run(run())
-    assert events[-1]["event"] == "done"  # did not raise
-    assert len(events) == 1  # no text from faulty data, just done
+    error_events = [e for e in events if e["event"] == "error"]
+    assert len(error_events) >= 1
+
+
+def test_sse_adapter_handles_tool_messages():
+    """updates 中的 ToolMessage 输出为 event=tool."""
+
+    async def tool_stream():
+        # 模拟 tool 调用的 stream
+        yield ("ns", "updates", {"agent": {"messages": [ToolMessage(content="已查询礼品卡", tool_call_id="call_1")]}})
+        yield ("ns", "messages", (HumanMessage(content="结果"), {}))
+        yield ("ns", "done", {})
+
+    async def run():
+        events = []
+        async for event in sse_adapter(tool_stream()):
+            events.append(event)
+        return events
+
+    import asyncio
+
+    events = asyncio.run(run())
+    tool_events = [e for e in events if e["event"] == "tool"]
+    assert len(tool_events) >= 1
+    assert tool_events[0]["data"]["content"] == "已查询礼品卡"

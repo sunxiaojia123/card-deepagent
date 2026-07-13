@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend, StoreBackend
 from langgraph.store.memory import InMemoryStore
 
 # 持久化文件路径
@@ -56,13 +56,15 @@ def _user_backend(user_id: str) -> StoreBackend:
 def create_user_scoped_backend(runtime):
     """创建按 user_id 隔离的 CompositeBackend。
 
-    /skills/base/ → StateBackend（全局公共，各用户共享）
+    /skills/base/ → FilesystemBackend（物理文件，全局公共）
     /skills/user/ → StoreBackend（按 user_id namespace 隔离）
+    其他路径 → StateBackend（会话内临时文件）
     """
     user_id = runtime.context["user_id"]
     return CompositeBackend(
         default=StateBackend(),
         routes={
+            "/skills/base/": FilesystemBackend(root_dir="skills/base", virtual_mode=True),
             "/skills/user/": _user_backend(user_id),
         },
     )

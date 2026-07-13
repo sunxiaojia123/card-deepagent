@@ -104,7 +104,7 @@ async def chat_stream(
         {"messages": [HumanMessage(content=message)]},
         config=config,
         context=ctx,
-        stream_mode=["messages"],
+        stream_mode=["messages", "updates"],
     )
 
     async def generate():
@@ -205,6 +205,35 @@ async def get_skill(
     if content is None:
         raise HTTPException(status_code=404, detail="skill 不存在")
     return PlainTextResponse(content, media_type="text/plain")
+
+
+@app.get("/users/me/skills/{skill_name}/apis")
+async def get_skill_apis(skill_name: str) -> dict:
+    """获取 Skill 的 API schema 列表（从 skills/base/ 的 apis.yaml 读取）."""
+    from pathlib import Path
+    from src.tools.api_schema import load_api_schemas
+
+    skill_dir = Path("skills/base") / skill_name
+    if not skill_dir.exists():
+        raise HTTPException(status_code=404, detail="skill 不存在")
+
+    schemas = load_api_schemas(skill_dir)
+    return {
+        "apis": [
+            {
+                "name": s.name,
+                "path": s.path,
+                "method": s.method,
+                "show_type": s.show_type,
+                "description": s.description,
+                "params": [
+                    {"name": p.name, "type": p.type, "required": p.required, "description": p.description}
+                    for p in s.params
+                ],
+            }
+            for s in schemas
+        ]
+    }
 
 
 @app.get("/users/me/skills")

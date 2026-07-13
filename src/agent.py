@@ -9,6 +9,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from config.settings import settings
 from src.backend import create_user_scoped_backend
 from src.context import TradingContext
+from src.tools.api_executor import call_internal_api
 
 TRADING_ORCHESTRATOR_PROMPT = """\
 你是一个专业的加密货币交易助手。
@@ -16,6 +17,8 @@ TRADING_ORCHESTRATOR_PROMPT = """\
 ## 角色与能力
 - 帮助用户查询行情、持仓、订单、交易对信息。
 - 根据用户的交易需求，引导用户完成下单流程。
+- 支持礼品卡查询、购买、充值、转账等业务。
+- 根据用户意图匹配对应的 Skill，调用内部 API 完成操作。
 - 提供客观的市场信息，不给出投资建议。
 
 ## 话术边界
@@ -53,6 +56,7 @@ def build_agent(
     if with_skills:
         kwargs["skills"] = ["/skills/base/", "/skills/user/"]
         kwargs["backend"] = create_user_scoped_backend
+        kwargs["tools"] = [call_internal_api]
 
     return create_deep_agent(
         model=model or settings.model,

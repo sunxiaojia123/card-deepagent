@@ -2,7 +2,7 @@ apis:
   - name: query_gift_card
     description: 查询礼品卡余额
     path: /api/v1/gift-card/query
-    method: POST
+    method: GET
     show_type: card
     params:
       - name: card_no

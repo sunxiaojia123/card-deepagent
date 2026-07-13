@@ -24,6 +24,7 @@ class Settings:
     # API
     api_host: str = os.getenv("API_HOST", "0.0.0.0")
     api_port: int = int(os.getenv("API_PORT", "8000"))
+    mock_api_url: str = os.getenv("MOCK_API_URL", "http://127.0.0.1:9000")
 
     # Deep Agents
     skills_base_dir: str = os.getenv("SKILLS_BASE_DIR", "skills/base")

@@ -5,32 +5,48 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
-AgentInputStream = AsyncGenerator[tuple[str, tuple[Any, dict]], None]
+AgentMultiStream = AsyncGenerator[tuple[Any, str, Any], None]
 
 
 async def sse_adapter(
-    stream: AgentInputStream,
+    stream: AgentMultiStream,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """将 agent 的 messages stream 转为统一 SSE event dict。
+    """将 agent stream 转为统一 SSE event dict。
 
-    stream 格式（单 stream_mode）: (mode, (message, metadata))
-    输出格式: {"event": "text"|"done"|"error", "data": {...}}
+    兼容:
+    - 单 stream_mode: (mode, data) → 2-tuple
+    - 多 stream_mode: (ns, mode, data) → 3-tuple
 
-    Usage:
-        async for event in sse_adapter(agent.astream(...)):
-            yield f"event: {event['event']}\\ndata: {json.dumps(event['data'])}\\n\\n"
+    输出: event=text | tool | done | error
     """
     try:
-        async for mode, data in stream:
+        async for chunk in stream:
+            # 兼容 2-tuple 和 3-tuple 格式
+            if len(chunk) == 2:
+                mode, data = chunk
+            else:
+                _ns, mode, data = chunk
+
             if mode == "messages":
                 msg, _meta = data
                 if isinstance(msg, (AIMessage, AIMessageChunk)) and msg.content:
-                    yield {
-                        "event": "text",
-                        "data": {"content": msg.content},
-                    }
+                    yield {"event": "text", "data": {"content": msg.content}}
+
+            elif mode == "updates":
+                for _channel, value in data.items():
+                    if isinstance(value, dict) and "messages" in value:
+                        for m in value["messages"]:
+                            if isinstance(m, ToolMessage):
+                                yield {
+                                    "event": "tool",
+                                    "data": {
+                                        "content": m.content,
+                                        "tool_call_id": getattr(m, "tool_call_id", ""),
+                                    },
+                                }
+
         yield {"event": "done", "data": {}}
     except Exception as exc:
         yield {"event": "error", "data": {"message": str(exc)}}
@@ -39,12 +55,7 @@ async def sse_adapter(
 async def sse_events_to_str(
     events: AsyncGenerator[dict[str, Any], None],
 ) -> AsyncGenerator[str, None]:
-    """将 event dict 转为 SSE 文本格式。
-
-    Usage:
-        async for line in sse_events_to_str(sse_adapter(agent.astream(...))):
-            ...
-    """
+    """将 event dict 转为 SSE 文本格式."""
     import json
 
     async for event in events:

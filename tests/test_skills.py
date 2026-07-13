@@ -125,7 +125,7 @@ def test_load_gift_card_schemas():
     # 验证 query_gift_card 的 schema
     q = next(s for s in schemas if s.name == "query_gift_card")
     assert q.show_type == "card"
-    assert q.method == "POST"
+    assert q.method == "GET"
     assert len(q.params) == 1
     assert q.params[0].name == "card_no"
     assert q.params[0].required is True
