@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 import pytest
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from src.agent import build_agent
 from src.context import build_context
@@ -116,20 +116,53 @@ def test_sse_adapter_handles_tool_messages():
     """updates 中的 ToolMessage 输出为 event=tool."""
 
     async def tool_stream():
-        # 模拟 tool 调用的 stream
         yield ("ns", "updates", {"agent": {"messages": [ToolMessage(content="已查询礼品卡", tool_call_id="call_1")]}})
-        yield ("ns", "messages", (HumanMessage(content="结果"), {}))
-        yield ("ns", "done", {})
-
-    async def run():
-        events = []
-        async for event in sse_adapter(tool_stream()):
-            events.append(event)
-        return events
+        if False:
+            yield None
 
     import asyncio
-
-    events = asyncio.run(run())
+    events = asyncio.run(_collect(tool_stream()))
     tool_events = [e for e in events if e["event"] == "tool"]
     assert len(tool_events) >= 1
     assert tool_events[0]["data"]["content"] == "已查询礼品卡"
+
+
+def test_sse_adapter_handles_custom_events():
+    """custom channel 中的 card 事件直接透传."""
+
+    async def custom_stream():
+        yield ("ns", "custom", {"event": "card", "data": {"card": {"balance": 500}}})
+        if False:
+            yield None
+
+    import asyncio
+    events = asyncio.run(_collect(custom_stream()))
+    card_events = [e for e in events if e["event"] == "card"]
+    assert len(card_events) >= 1
+    assert card_events[0]["data"]["card"]["balance"] == 500
+
+
+def test_sse_adapter_full_pipeline():
+    """模拟完整流：messages + tool + card + done."""
+
+    async def full_stream():
+        yield ("ns", "updates", {"agent": {"messages": [ToolMessage(content="调用API", tool_call_id="c1")]}})
+        yield ("ns", "custom", {"event": "card", "data": {"positions": [{"symbol": "BTC"}]}})
+        yield ("ns", "messages", (AIMessage(content="好的，已展示卡片"), {}))
+        if False:
+            yield None
+
+    import asyncio
+    events = asyncio.run(_collect(full_stream()))
+    types = [e["event"] for e in events]
+    assert "tool" in types
+    assert "card" in types
+    assert "text" in types
+    assert types[-1] == "done"
+
+
+async def _collect(stream):
+    events = []
+    async for event in sse_adapter(stream):
+        events.append(event)
+    return events

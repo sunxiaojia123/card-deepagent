@@ -9,6 +9,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from config.settings import settings
 from src.backend import create_user_scoped_backend
 from src.context import TradingContext
+from src.middleware.trading_output import TradingOutputMiddleware
 from src.tools.api_executor import call_internal_api
 
 TRADING_ORCHESTRATOR_PROMPT = """\
@@ -57,6 +58,7 @@ def build_agent(
         kwargs["skills"] = ["/skills/base/", "/skills/user/"]
         kwargs["backend"] = create_user_scoped_backend
         kwargs["tools"] = [call_internal_api]
+        kwargs["middleware"] = [TradingOutputMiddleware()]
 
     return create_deep_agent(
         model=model or settings.model,

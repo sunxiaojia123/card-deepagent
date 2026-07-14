@@ -64,7 +64,7 @@
     border-radius: 12px; border: 1px solid #1f6feb44;
   }
 
-  .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .messages { flex: 1; overflow-y: auto; padding: 20px 20px 10px; display: flex; flex-direction: column; gap: 16px; }
 
   .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; word-break: break-word; }
   .msg.user { align-self: flex-end; background: #1f6feb; color: #fff; border-bottom-right-radius: 4px; }
@@ -72,6 +72,7 @@
   .msg.assistant.streaming { border-left: 2px solid #58a6ff; }
   .msg.tool { align-self: center; background: transparent; color: #58a6ff; font-size: 11px; padding: 2px 0; max-width: 90%; opacity: 0.7; }
   .msg.tool::before { content: '⚙ '; }
+  .msg.card { align-self: center; background: #1f6feb11; border: 1px solid #1f6feb33; color: #e1e4e8; font-size: 12px; padding: 10px 14px; max-width: 90%; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
 
   .input-area {
     padding: 16px 20px; border-top: 1px solid #21262d;
@@ -339,6 +340,10 @@ async function selectConversation(id) {
     for (const m of data.messages) {
       const role = m.role === 'user' ? 'user' : m.role === 'tool' ? 'tool' : 'assistant';
       appendMessage(role, m.content);
+      // 如果 tool 消息携带 artifact（card 数据），同时渲染 card
+      if (m.artifact) {
+        appendMessage('card', JSON.stringify(m.artifact, null, 2));
+      }
     }
   } catch (e) { console.error('load history:', e); }
   scrollBottom();
@@ -358,7 +363,7 @@ async function sendMessage() {
   input.style.height = 'auto';
 
   appendMessage('user', text);
-  const bubble = appendMessage('assistant', '', true);
+  let bubble = null;  // 延迟创建，等第一个 text token 到达
 
   try {
     const resp = await fetch(BASE + '/conversations/' + currentConvId + '/chat/stream', {
@@ -382,21 +387,24 @@ async function sendMessage() {
       while (i < lines.length) {
         if (lines[i].startsWith('event: text') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
           const data = JSON.parse(lines[i + 1].slice(6));
+          if (!bubble) bubble = appendMessage('assistant', '', true);  // 第一个 text 才创建
           bubble.textContent += data.content;
           i += 2;
         } else if (lines[i].startsWith('event: done')) {
-          bubble.classList.remove('streaming');
+          if (bubble) bubble.classList.remove('streaming');
           i += 1;
         } else if (lines[i].startsWith('event: tool') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
-          const data = JSON.parse(lines[i + 1].slice(6));
-          appendMessage('tool', data.content);
+          appendMessage('tool', JSON.parse(lines[i + 1].slice(6)).content);
+          i += 2;
+        } else if (lines[i].startsWith('event: card') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
+          appendMessage('card', JSON.stringify(JSON.parse(lines[i + 1].slice(6)), null, 2));
           i += 2;
         } else if (lines[i].startsWith('event: error')) {
           if (i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
-            const data = JSON.parse(lines[i + 1].slice(6));
-            bubble.textContent = '[错误] ' + data.message;
+            if (!bubble) bubble = appendMessage('assistant', '', true);
+            bubble.textContent = '[错误] ' + JSON.parse(lines[i + 1].slice(6)).message;
           }
-          bubble.classList.remove('streaming');
+          if (bubble) bubble.classList.remove('streaming');
           i += 2;
         } else {
           i += 1;
@@ -404,8 +412,9 @@ async function sendMessage() {
       }
       scrollBottom();
     }
-    bubble.classList.remove('streaming');
+    if (bubble) bubble.classList.remove('streaming');
   } catch (e) {
+    if (!bubble) bubble = appendMessage('assistant', '', true);
     bubble.textContent = '[错误] ' + e.message;
     bubble.classList.remove('streaming');
   }

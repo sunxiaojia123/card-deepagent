@@ -104,7 +104,7 @@ async def chat_stream(
         {"messages": [HumanMessage(content=message)]},
         config=config,
         context=ctx,
-        stream_mode=["messages", "updates"],
+        stream_mode=["messages", "updates", "custom"],
     )
 
     async def generate():
@@ -173,10 +173,15 @@ async def get_conversation_history(
     messages = []
     for m in raw_messages:
         role = _msg_role(m)
-        messages.append({
+        entry = {
             "role": role,
             "content": getattr(m, "content", ""),
-        })
+        }
+        # 携带 artifact（card 数据等）
+        artifact = getattr(m, "artifact", None)
+        if artifact:
+            entry["artifact"] = artifact
+        messages.append(entry)
     return {"messages": messages}
 
 

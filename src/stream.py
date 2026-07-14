@@ -47,6 +47,11 @@ async def sse_adapter(
                                     },
                                 }
 
+            elif mode == "custom":
+                # stream_writer 推送的自定义事件（如 card）
+                if isinstance(data, dict) and "event" in data:
+                    yield data
+
         yield {"event": "done", "data": {}}
     except Exception as exc:
         yield {"event": "error", "data": {"message": str(exc)}}
