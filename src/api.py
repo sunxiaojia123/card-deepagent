@@ -27,6 +27,8 @@ from src.backend import (
     update_user_skill,
 )
 from src.db import conversation_exists, create_conversation, init_db, list_conversations
+from langgraph.types import Command
+
 from src.stream import sse_adapter
 
 
@@ -102,6 +104,55 @@ async def chat_stream(
 
     stream = agent.astream(
         {"messages": [HumanMessage(content=message)]},
+        config=config,
+        context=ctx,
+        stream_mode=["messages", "updates", "custom"],
+    )
+
+    async def generate():
+        async for event in sse_adapter(stream):
+            yield f"event: {event['event']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/conversations/{conversation_id}/resume")
+async def resume_chat(
+    conversation_id: str,
+    body: dict[str, str],
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> StreamingResponse:
+    """Popup 选择后恢复 Agent 执行。
+
+    Path: conversation_id — 与触发 popup 的会话相同。
+    Body: {"option_id": "spot"}
+    """
+    option_id = body.get("option_id", "").strip()
+    if not option_id:
+        raise HTTPException(status_code=400, detail="option_id 不能为空")
+
+    if not await conversation_exists(conversation_id, user_id):
+        raise HTTPException(status_code=404, detail="会话不存在或无权访问")
+
+    agent = app.state.agent
+    ctx = build_context(user_id, conversation_id)
+    config = {
+        "configurable": {
+            "thread_id": conversation_id,
+            "checkpoint_ns": "",
+        }
+    }
+
+    stream = agent.astream(
+        Command(resume={"selected": option_id}),
         config=config,
         context=ctx,
         stream_mode=["messages", "updates", "custom"],

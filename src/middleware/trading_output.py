@@ -41,6 +41,11 @@ class TradingOutputMiddleware(AgentMiddleware):
     ) -> ToolMessage:
         msg = await handler(request)
 
+        # Command（如 confirm_popup 的 interrupt/resume）直接透传
+        from langgraph.types import Command
+        if isinstance(msg, Command):
+            return msg
+
         result = _parse_trading_result(msg)
         if result is None:
             return msg

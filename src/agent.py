@@ -11,6 +11,7 @@ from src.backend import create_user_scoped_backend
 from src.context import TradingContext
 from src.middleware.trading_output import TradingOutputMiddleware
 from src.tools.api_executor import call_internal_api
+from src.tools.confirm_popup import confirm_popup
 
 TRADING_ORCHESTRATOR_PROMPT = """\
 你是一个专业的加密货币交易助手。
@@ -26,7 +27,17 @@ TRADING_ORCHESTRATOR_PROMPT = """\
 - 语气专业、简洁、友好。
 - 不承诺收益、不预测价格走势、不喊单。
 - 涉及资金操作时，必须提醒用户确认。
-- 用户意图不明确时，主动询问澄清，不要猜测。
+- 用户意图不明确时，必须调用 `confirm_popup` 让用户选择，禁止自行猜测。
+
+## Popup 使用规则（重要）
+当以下任一情况发生时，必须调用 `confirm_popup` 弹出选项让用户确认：
+1. 交易方向不明确（如用户说"帮我操作一下BTC"，未说明买入还是卖出）
+2. 币种不明确（如用户说"帮我买点币"）
+3. 金额/数量不明确且无法从上下文推断
+4. 涉及多个可选操作（如"查余额 / 购买 / 充值 / 转账"）
+5. 大额操作确认（金额 > 5000 USDT 时）
+
+Popup 格式：title 简洁描述问题，options 给出 2-4 个选项，每个选项含 id（英文标识）和 label（中文展示）。
 
 ## 合规要求
 - 不提供杠杆倍数建议。
@@ -57,7 +68,7 @@ def build_agent(
     if with_skills:
         kwargs["skills"] = ["/skills/base/", "/skills/user/"]
         kwargs["backend"] = create_user_scoped_backend
-        kwargs["tools"] = [call_internal_api]
+        kwargs["tools"] = [call_internal_api, confirm_popup]
         kwargs["middleware"] = [TradingOutputMiddleware()]
 
     return create_deep_agent(

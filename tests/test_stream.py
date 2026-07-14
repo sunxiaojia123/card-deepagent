@@ -161,6 +161,26 @@ def test_sse_adapter_full_pipeline():
     assert types[-1] == "done"
 
 
+def test_sse_adapter_handles_interrupt():
+    """updates 中的 __interrupt__ 输出为 event=interrupt."""
+
+    class MockInterrupt:
+        value = {"type": "popup", "title": "选择", "options": [{"id": "buy", "label": "买入"}]}
+        id = "int-001"
+
+    async def interrupt_stream():
+        yield ("ns", "updates", {"__interrupt__": [MockInterrupt()]})
+        if False:
+            yield None
+
+    import asyncio
+    events = asyncio.run(_collect(interrupt_stream()))
+    interrupt_events = [e for e in events if e["event"] == "interrupt"]
+    assert len(interrupt_events) >= 1
+    assert interrupt_events[0]["data"]["value"]["type"] == "popup"
+    assert interrupt_events[0]["data"]["id"] == "int-001"
+
+
 async def _collect(stream):
     events = []
     async for event in sse_adapter(stream):

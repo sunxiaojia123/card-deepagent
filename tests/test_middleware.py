@@ -11,6 +11,9 @@ from src.middleware.trading_output import TradingOutputMiddleware
 from src.schemas.trading_result import TradingToolResult
 
 
+from langgraph.types import Command
+
+
 def _make_request():
     request = MagicMock()
     request.tool_call = {"id": "call_123", "name": "call_internal_api", "args": {}}
@@ -104,3 +107,17 @@ async def test_card_no_data_no_stream():
 
     assert result.content == "ok"
     writer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_command_passthrough():
+    """confirm_popup 返回的 Command 直接透传（不解析为 TradingToolResult）."""
+    middleware = TradingOutputMiddleware()
+    cmd = Command(update={"messages": [ToolMessage(content="用户选择了: 现货", tool_call_id="call_cmd")]})
+
+    result = await middleware.awrap_tool_call(
+        _make_request(),
+        _make_handler(cmd),
+    )
+    assert isinstance(result, Command)
+    assert result.update["messages"][0].content == "用户选择了: 现货"

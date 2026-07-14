@@ -152,6 +152,23 @@
   }
   .toast.error { background: #da3633; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  .popup-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 300;
+    display: none; align-items: center; justify-content: center;
+  }
+  .popup-overlay.open { display: flex; }
+  .popup-box {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 24px; width: 400px; max-width: 90vw;
+  }
+  .popup-box h3 { font-size: 15px; margin-bottom: 16px; color: #e1e4e8; }
+  .popup-option {
+    display: block; width: 100%; padding: 10px 14px; margin-bottom: 8px;
+    background: #21262d; border: 1px solid #30363d; border-radius: 8px;
+    color: #c9d1d9; cursor: pointer; font-size: 14px; text-align: left;
+  }
+  .popup-option:hover { background: #30363d; border-color: #58a6ff; }
 </style>
 </head>
 <body>
@@ -177,6 +194,14 @@
       <button class="btn btn-primary" style="padding:2px 8px;font-size:11px;width:auto" onclick="event.stopPropagation();openCreateModal()">+</button>
     </div>
     <div class="skills-list" id="skillsList"></div>
+  </div>
+</div>
+
+<!-- Popup Modal -->
+<div class="popup-overlay" id="popupOverlay">
+  <div class="popup-box">
+    <h3 id="popupTitle">请选择</h3>
+    <div id="popupOptions"></div>
   </div>
 </div>
 
@@ -399,6 +424,14 @@ async function sendMessage() {
         } else if (lines[i].startsWith('event: card') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
           appendMessage('card', JSON.stringify(JSON.parse(lines[i + 1].slice(6)), null, 2));
           i += 2;
+        } else if (lines[i].startsWith('event: popup') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
+          const d = JSON.parse(lines[i + 1].slice(6));
+          showPopup(d.title, d.options);
+          i += 2;
+        } else if (lines[i].startsWith('event: interrupt') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
+          const d = JSON.parse(lines[i + 1].slice(6));
+          appendMessage('tool', '[等待选择: ' + (d.title || '') + ']');
+          i += 2;
         } else if (lines[i].startsWith('event: error')) {
           if (i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
             if (!bubble) bubble = appendMessage('assistant', '', true);
@@ -572,6 +605,59 @@ async function deleteSkill(name) {
     closeModal();
     loadSkills();
   } catch (e) { toast('删除失败: ' + e.message, true); }
+}
+
+// ── Popup ──
+let popupCallId = null;
+
+function showPopup(title, options) {
+  document.getElementById('popupTitle').textContent = title;
+  const optsDiv = document.getElementById('popupOptions');
+  optsDiv.innerHTML = options.map(o =>
+    `<button class="popup-option" onclick="selectPopupOption('${o.id}')">${o.label}</button>`
+  ).join('');
+  document.getElementById('popupOverlay').classList.add('open');
+}
+
+let pendingPopupConv = null;
+
+async function selectPopupOption(optionId) {
+  document.getElementById('popupOverlay').classList.remove('open');
+  appendMessage('tool', '选择了: ' + optionId);
+  const bubble = appendMessage('assistant', '', true);
+  try {
+    const resp = await fetch(BASE + '/conversations/' + currentConvId + '/resume', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + userId, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ option_id: optionId }),
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('event: text') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
+          bubble.textContent += JSON.parse(lines[i + 1].slice(6)).content;
+          i++;
+        } else if (lines[i].startsWith('event: done')) {
+          bubble.classList.remove('streaming');
+        } else if (lines[i].startsWith('event: tool') && i + 1 < lines.length && lines[i + 1].startsWith('data: ')) {
+          appendMessage('tool', JSON.parse(lines[i + 1].slice(6)).content);
+          i++;
+        }
+      }
+      scrollBottom();
+    }
+    bubble.classList.remove('streaming');
+  } catch (e) {
+    bubble.textContent = '[错误] ' + e.message;
+    bubble.classList.remove('streaming');
+  }
 }
 
 // ── Init ──

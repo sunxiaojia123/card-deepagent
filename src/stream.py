@@ -35,6 +35,19 @@ async def sse_adapter(
                     yield {"event": "text", "data": {"content": msg.content}}
 
             elif mode == "updates":
+                # 检测 interrupt（popup 等暂停信号）
+                if "__interrupt__" in data:
+                    interrupt_list = data["__interrupt__"]
+                    if isinstance(interrupt_list, list) and len(interrupt_list) > 0:
+                        # Interrupt 对象转 dict（提取 value + id 字段）
+                        item = interrupt_list[0]
+                        yield {
+                            "event": "interrupt",
+                            "data": {
+                                "value": getattr(item, "value", None),
+                                "id": getattr(item, "id", None),
+                            },
+                        }
                 for _channel, value in data.items():
                     if isinstance(value, dict) and "messages" in value:
                         for m in value["messages"]:
