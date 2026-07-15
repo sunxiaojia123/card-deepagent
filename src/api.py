@@ -26,7 +26,18 @@ from src.backend import (
     list_user_skills,
     update_user_skill,
 )
-from src.db import conversation_exists, create_conversation, init_db, list_conversations
+from src.db import (
+    conversation_exists,
+    create_conversation,
+    create_mcp_config,
+    delete_mcp_config,
+    init_db,
+    init_mcp_table,
+    list_conversations,
+    list_mcp_configs,
+    update_mcp_config,
+)
+from src.db import MCPConfig
 from langgraph.types import Command
 
 from src.stream import sse_adapter
@@ -48,6 +59,7 @@ async def _lifespan(_app: FastAPI):
         await saver.setup()
         agent = build_agent(checkpointer=saver, with_skills=True)
         await init_db()
+        await init_mcp_table()
         await _restore_from_disk()
         _app.state.agent = agent
         _app.state.saver = saver
@@ -343,6 +355,88 @@ async def delete_skill(
     if not ok:
         raise HTTPException(status_code=404, detail="skill 不存在")
     return {"name": skill_name, "status": "deleted"}
+
+
+# ── MCP 配置 CRUD ──
+
+
+@app.get("/users/me/mcp")
+async def list_mcp(
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """列出当前用户的 MCP 配置."""
+    configs = await list_mcp_configs(user_id)
+    return {
+        "configs": [
+            {
+                "server_id": c.server_id,
+                "server_name": c.server_name,
+                "transport": c.transport,
+                "command": c.command,
+                "args": c.args,
+                "url": c.url,
+                "headers": c.headers,
+                "env_vars": c.env_vars,
+                "enabled": c.enabled,
+            }
+            for c in configs
+        ]
+    }
+
+
+@app.post("/users/me/mcp")
+async def create_mcp(
+    body: dict,
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """创建 MCP 配置."""
+    server_id = body.get("server_id", "").strip()
+    if not server_id:
+        raise HTTPException(status_code=400, detail="server_id 不能为空")
+    server_name = body.get("server_name", "").strip() or server_id
+    transport = body.get("transport", "stdio")
+    if transport not in ("stdio", "sse"):
+        raise HTTPException(status_code=400, detail="transport 必须是 stdio 或 sse")
+
+    config = MCPConfig(
+        server_id=server_id,
+        user_id=user_id,
+        server_name=server_name,
+        transport=transport,
+        command=body.get("command"),
+        args=body.get("args", []),
+        url=body.get("url"),
+        headers=body.get("headers"),
+        env_vars=body.get("env_vars"),
+        enabled=body.get("enabled", True),
+    )
+    await create_mcp_config(config)
+    return {"server_id": server_id, "status": "created"}
+
+
+@app.put("/users/me/mcp/{server_id}")
+async def update_mcp(
+    server_id: str,
+    body: dict,
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """更新 MCP 配置."""
+    ok = await update_mcp_config(user_id, server_id, body)
+    if not ok:
+        raise HTTPException(status_code=404, detail="MCP 配置不存在")
+    return {"server_id": server_id, "status": "updated"}
+
+
+@app.delete("/users/me/mcp/{server_id}")
+async def delete_mcp(
+    server_id: str,
+    user_id: Annotated[str, Depends(_extract_user_id)],
+) -> dict:
+    """删除 MCP 配置."""
+    ok = await delete_mcp_config(user_id, server_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="MCP 配置不存在")
+    return {"server_id": server_id, "status": "deleted"}
 
 
 @app.get("/health")
