@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -36,17 +37,79 @@ async def load_mcp_tools(user_id: str) -> list[BaseTool]:
     client = MultiServerMCPClient(connections=connections)
     try:
         tools = await client.get_tools()
-        logger.info("Loaded %d MCP tools for user %s from %d server(s)", len(tools), user_id, len(enabled))
+        logger.info(
+            "Loaded %d MCP tools for user %s from %d server(s)",
+            len(tools), user_id, len(enabled),
+        )
         return list(tools)
     except Exception as exc:
         logger.warning("Failed to load MCP tools for user %s: %s", user_id, exc)
         return []
 
 
-def _build_connections(configs: list[MCPConfig]) -> dict:
+async def load_mcp_tools_with_stats(user_id: str) -> tuple[list[BaseTool], dict]:
+    """加载 MCP tools 并返回统计信息。
+
+    Args:
+        user_id: 用户 ID。
+
+    Returns:
+        (tools_list, stats_dict) — stats 含 server_count, tool_count, time_ms, errors。
+    """
+    t0 = time.monotonic()
+
+    configs = await list_mcp_configs(user_id)
+    enabled = [c for c in configs if c.enabled]
+    if not enabled:
+        return [], {"server_count": 0, "tool_count": 0, "time_ms": 0, "errors": []}
+
+    connections = _build_connections(enabled)
+    if not connections:
+        elapsed = (time.monotonic() - t0) * 1000
+        return [], {
+            "server_count": 0, "tool_count": 0,
+            "time_ms": elapsed, "errors": ["no valid connections"],
+        }
+
+    errors: list[str] = []
+    client = MultiServerMCPClient(connections=connections)
+    try:
+        raw_tools = await client.get_tools()
+        tools = list(raw_tools)
+    except Exception as exc:
+        tools = []
+        errors.append(str(exc))
+
+    elapsed = (time.monotonic() - t0) * 1000
+    logger.info(
+        "MCP load user=%s servers=%d tools=%d time=%.0fms errors=%d",
+        user_id, len(connections), len(tools), elapsed, len(errors),
+    )
+
+    return tools, {
+        "server_count": len(connections),
+        "tool_count": len(tools),
+        "time_ms": elapsed,
+        "errors": errors,
+    }
+
+
+def _build_connections(
+    configs: list[MCPConfig],
+    connect_timeout: float = 10.0,
+    sse_read_timeout: float = 300.0,
+) -> dict:
     """将 MCPConfig 列表转为 MultiServerMCPClient 的 connections dict。
 
     每个 server 单独 try，单个 server 连接失败不影响其他。
+
+    Args:
+        configs: 启用的 MCP 配置列表。
+        connect_timeout: SSE HTTP 连接超时（秒）。
+        sse_read_timeout: SSE 读取超时（秒）。
+
+    Returns:
+        connections dict，键为 server_id。
     """
     connections: dict = {}
     for cfg in configs:
@@ -59,11 +122,23 @@ def _build_connections(configs: list[MCPConfig]) -> dict:
                     env=cfg.env_vars,
                 )
             elif cfg.transport == "sse":
-                connections[cfg.server_id] = SSEConnection(
+                conn = SSEConnection(
                     transport="sse",
                     url=cfg.url,
                     headers=cfg.headers or {},
                 )
+                conn["timeout"] = connect_timeout
+                conn["sse_read_timeout"] = sse_read_timeout
+                connections[cfg.server_id] = conn
+            elif cfg.transport in ("streamable_http", "streamable-http"):
+                connections[cfg.server_id] = {
+                    "transport": cfg.transport,
+                    "url": cfg.url,
+                    "headers": cfg.headers or {},
+                }
         except Exception as exc:
-            logger.warning("Failed to build connection for MCP server '%s': %s", cfg.server_id, exc)
+            logger.warning(
+                "Failed to build connection for MCP server '%s': %s",
+                cfg.server_id, exc,
+            )
     return connections
