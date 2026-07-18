@@ -60,6 +60,10 @@ async def _lifespan(_app: FastAPI):
         agent = build_agent(checkpointer=saver, with_skills=True)
         await init_db()
         await init_mcp_table()
+        # 生产切换到 PG Store 时：
+        #   await _store.setup()          # 建 store 表（需 import src.backend._store）
+        #   # 首次迁移：跑一次数据迁移脚本，把 data/skills.json 写入 PG
+        #   # 之后删除下面这行
         await _restore_from_disk()
         _app.state.agent = agent
         _app.state.saver = saver

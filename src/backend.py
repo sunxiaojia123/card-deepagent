@@ -9,7 +9,18 @@ from pathlib import Path
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend, StoreBackend
 from langgraph.store.memory import InMemoryStore
 
-# 持久化文件路径
+# ---------------------------------------------------------------------------
+# 生产切换：将 InMemoryStore 替换为 PostgresStore
+#
+#   from langgraph.store.postgres import AsyncPostgresStore
+#   _store = AsyncPostgresStore.from_conn_string(settings.postgres_uri)
+#
+# 同时在 api.py 的 _lifespan 中添加 await _store.setup() 建表。
+# 切换后 _restore_from_disk() / _save_skills_to_disk() / _load_skills_from_disk()
+# 可一并移除 — Skill 数据直接读写 PG，不再需要 JSON 文件 + 启动恢复。
+# ---------------------------------------------------------------------------
+
+# 持久化文件路径（生产切换到 PG 后可移除 _DATA_FILE 及所有引用）
 _DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "skills.json"
 
 # 全局共享 Store，通过 namespace 区分用户
